@@ -54,30 +54,52 @@ There are 3 types of CVE's listed in the scan result:
 
 There are 2 vulnerabilities of redis, non of them got fixed in later versions. I can fix them by editing their code directly (There's no other way to do it). 
 There are many go-module vulnerabilities that got fixed in later GO versions. I can fix them by upgrading GO's version.
+The debian vulnerabilities require creating a new image of debian, and it's the most expensive solution, so I won't do it.
 
+## Step 6 - Fixing redis CVE
+CVE 2025-49112 is about an integer underflow, and a possible solution is listed [here](https://github.com/valkey-io/valkey/pull/2101). So all I got to do is to change the condition in line 783 in src/networking.c to:
+```
+prev->size > prev->used
+```
+The Dockerfile fetches the source code directly on the container:
+```
+wget -O redis.tar.gz "$REDIS_DOWNLOAD_URL";
+mkdir -p /usr/src/redis;
+tar -xzf redis.tar.gz -C /usr/src/redis --strip-components=1;
+```
+So I added the file modification right after:
+```
+sed -i 's/prev->size - prev->used > 0/prev->size > prev->used/g' /usr/src/redis/src/networking.c;
+```
+This command replaces the condition in networking.c. 
+After building the image and scanning it with grype, I compared the result and the original scan, and there was no difference. CVE 2025-49112 was listed also after fixing the issue. I read in the internet that grype lists CVEs according to the software's version, meaning that a change in the source code doesn't effect grype's scan result, but the CVE was fixed.
+I ran the tests and they all passed.
 
+## Step 7 - Fixing GO CVEs
+All GO CVEs can be resolved by upgrading go module version. 
+Upgrading GO to 1.20.7 should resolve at least 10 CVEs.
+After examining the Dockerfile, I found that the binary gosu is the cause for the image to have GO libraries.
+The DockerFile sets gosu version through an environment variable:
+```
+ENV GOSU_VERSION 1.17
+```
+It uses version 1.17 while the most updates version is 1.19. I checked in gosu's repo and version 1.19 uses GO 1.24.6 - Enough for resolving at least 10 CVE's.
+So I changed the value in the Dockerfile to be:
+```
+ENV GOSU_VERSION 1.19
+```
+In addition, the number 1.17 is hardcoded in several urls right below, that links to gosu sources. I changed the number in all the links to 1.19. There's also a sha-256 linked to each url, and there's a validation using sha256sum:
+```
+echo "$sha256 */usr/local/bin/gosu" | sha256sum -c -;
+```
+The binaries are different in the newer version, so I deleted the validation in the Dockerfile, but a better approach would be to change the sha-256s to the updated ones (To prevent MITM attacks).
 
+After running grype on the new image, I got only 12 go-module CVEs compared to 65 go-module CVEs in the original scan.
 
+## Summary
+I had some experience with docker so it wasn't too challenging. I used WSL2 as my ubuntu so I had some problems with that - mostly with setting an IP to my container, windows-linux text files format differences (like \r\n), and memory limitations (That's why I had to change the `make` command in the Dockerfile to work slower only with 1 thread).
+As for lessons, this exercise made it clear that every product we use should be updated, but also then there will be vulnerabilities. It doesn't matter how safe you write you code, you'll always have so many vulnerabilities coming from the OS or libraries you use.
 
+Most vulnerabilities left are vulnerabilities in debian. Most of these CVE's didn't get fixed in any debian version. Therefore, the only way to fix them is editing debian source code and compiling it by myself. There are also 12 more go-module CVEs, which were'nt addressed om the last gosu version. All of them got fixed in later GO versions, so a solution here would be editing gosu source code to use the latest GO version. There's also 1 redis CVE that I didn't resolve. Editing redis source code is once again the solution here. As of priority - redis CVE's are the most priorotized to fix because redis manages the communication with the outer world - and attackers can get access to the machine through vulnerabilities in it. Next prioratized are some of the debian vulnerabilities, which redis directly use - for example libc CVEs or maybe encryption CVEs, because these can be used as well to get access to the machine. Then the rest of the debian vulnerabilities and the go-module vulnerabilities should be fixed, as they can be used to grant root-access once you have an access to the machine as a less powered user.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+The original image size is 175MB while new image size is 498MB.
