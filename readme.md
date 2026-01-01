@@ -19,6 +19,7 @@ I ran the script on my ubuntu which is the docker host, and I made sure that it 
 
 ## Step 2 - Writing a test suite
 I wrote a test suite using pytest, that validates the redis server functionality (See [test_redis.py](test_redis.py)).
+The suite checks all commands of redis, making sure they all work.
 I ran the tests on the original redis:7-bookworm image and all the tests passed.
 Later when I edit the image and fix vulnerabilities, I'll run the tests on it to make sure it functions as expected.
 
@@ -95,6 +96,7 @@ echo "$sha256 */usr/local/bin/gosu" | sha256sum -c -;
 The binaries are different in the newer version, so I deleted the validation in the Dockerfile, but a better approach would be to change the sha-256s to the updated ones (To prevent MITM attacks).
 
 After running grype on the new image, I got only 12 go-module CVEs compared to 65 go-module CVEs in the original scan.
+I ran the functionality tests and they all passed.
 
 ## Summary
 I had some experience with docker so it wasn't too challenging. I used WSL2 as my ubuntu so I had some problems with that - mostly with setting an IP to my container, windows-linux text files format differences (like \r\n), and memory limitations (That's why I had to change the `make` command in the Dockerfile to work slower only with 1 thread).
